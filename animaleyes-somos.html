@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SOMOS · Ojos Animales</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Nunito',sans-serif;user-select:none;}
+#app{display:flex;flex-direction:column;width:100%;height:100%;}
+
+/* ── TOP BAR ── */
+#topbar{
+  flex-shrink:0;display:flex;align-items:center;gap:8px;
+  padding:6px 12px;background:rgba(0,0,0,0.7);
+  border-bottom:1px solid rgba(255,255,255,0.08);z-index:10;
+  backdrop-filter:blur(8px);
+}
+#eye-icon{font-size:22px;}
+#animal-name{font-family:'Cinzel',serif;font-size:clamp(12px,3.5vw,17px);
+  color:#fff;font-weight:700;flex:1;}
+#animal-vision-type{font-size:clamp(9px,2.2vw,11px);color:rgba(255,255,255,0.5);
+  letter-spacing:1px;}
+#btn-prev,#btn-next{
+  width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.1);
+  border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .1s;flex-shrink:0;
+}
+#btn-prev:active,#btn-next:active{background:rgba(255,255,255,0.25);}
+
+/* ── SCENE ── */
+#scene-wrap{flex:1;min-height:0;position:relative;overflow:hidden;}
+#scene-canvas{display:block;width:100%;height:100%;}
+
+/* ── VISION LABEL ── */
+#vision-label{
+  position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,0.15);border-radius:20px;
+  padding:5px 16px;color:#fff;font-size:clamp(10px,2.8vw,13px);
+  font-weight:700;letter-spacing:1px;pointer-events:none;white-space:nowrap;
+}
+
+/* ── INFO PANEL ── */
+#info{
+  flex-shrink:0;padding:10px 14px 12px;
+  background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);
+  border-top:1px solid rgba(255,255,255,0.08);
+}
+#info-title{font-size:clamp(14px,4vw,18px);font-weight:900;color:#fff;margin-bottom:3px;
+  display:flex;align-items:center;gap:8px;}
+#info-desc{font-size:clamp(11px,2.8vw,13px);color:rgba(255,255,255,0.7);line-height:1.5;
+  margin-bottom:8px;}
+#info-tags{display:flex;gap:5px;flex-wrap:wrap;}
+.itag{padding:3px 10px;border-radius:12px;font-size:clamp(8px,2.2vw,10px);
+  font-weight:700;letter-spacing:0.5px;border:1px solid;}
+
+/* ── ANIMAL SELECTOR ── */
+#selector{
+  flex-shrink:0;display:flex;gap:6px;padding:8px 10px;
+  background:#000;overflow-x:auto;scrollbar-width:none;
+}
+#selector::-webkit-scrollbar{display:none;}
+.asel{
+  flex-shrink:0;width:clamp(44px,11vw,58px);height:clamp(44px,11vw,58px);
+  border-radius:50%;border:2px solid rgba(255,255,255,0.15);
+  background:rgba(255,255,255,0.06);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:clamp(20px,5.5vw,28px);transition:all .15s;
+}
+.asel:hover{border-color:rgba(255,255,255,0.4);}
+.asel.active{border-color:#fff;background:rgba(255,255,255,0.18);
+  box-shadow:0 0 14px rgba(255,255,255,0.25);}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div id="eye-icon">👁</div>
+    <div style="flex:1;min-width:0;">
+      <div id="animal-name">Humano</div>
+      <div id="animal-vision-type">Visión normal</div>
+    </div>
+    <button id="btn-prev">‹</button>
+    <button id="btn-next">›</button>
+  </div>
+  <div id="scene-wrap">
+    <canvas id="scene-canvas"></canvas>
+    <div id="vision-label">Cargando...</div>
+  </div>
+  <div id="info">
+    <div id="info-title"></div>
+    <div id="info-desc"></div>
+    <div id="info-tags"></div>
+  </div>
+  <div id="selector"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// CANVAS SETUP
+// ══════════════════════════════════════════════════════
+const canvas = document.getElementById('scene-canvas');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('scene-wrap');
+let W=0, H=0;
+
+function resize(){
+  W = canvas.width  = wrap.clientWidth;
+  H = canvas.height = wrap.clientHeight;
+}
+window.addEventListener('resize', ()=>{ resize(); renderVision(); });
+resize();
+
+// ══════════════════════════════════════════════════════
+// SCENE ELEMENTS — a rich landscape drawn in canvas
+// (forest edge, mountains, river, sky, deer, flowers, insects)
+// ══════════════════════════════════════════════════════
+let animT = 0;
+
+// Pre-seeded random for consistent scene
+function seededRand(seed){
+  let s = seed;
+  return ()=>{ s = Math.imul(s^(s>>>15),s|1); s ^= s+Math.imul(s^(s>>>7),s|61); return ((s^(s>>>14))>>>0)/4294967296; };
+}
+const rng = seededRand(12345);
+const trees = Array.from({length:22},()=>({
+  x: rng()*0.95+0.02, h: 0.18+rng()*0.24,
+  w: 0.02+rng()*0.025, dark: rng()>0.5, layer: rng()>0.6?1:0,
+})).sort((a,b)=>a.layer-b.layer);
+const flowers = Array.from({length:30},()=>({
+  x:rng(), y:0.72+rng()*0.1, r:rng()*Math.PI*2,
+  col:['#ff4488','#ffdd00','#ff8800','#cc44ff','#ff6699','#44ffcc'][Math.floor(rng()*6)],
+}));
+const mountains = [
+  {x:0.0,w:0.35,h:0.42},{x:0.18,w:0.3,h:0.36},{x:0.42,w:0.32,h:0.48},
+  {x:0.62,w:0.28,h:0.32},{x:0.78,w:0.35,h:0.44},
+];
+const birds_scene = Array.from({length:5},()=>({x:rng(),y:0.08+rng()*0.18,sp:0.0001+rng()*0.0002}));
+const insects = Array.from({length:8},()=>({x:rng(),y:0.6+rng()*0.15,sp:rng()*0.0003+0.0001,r:rng()*Math.PI*2}));
+
+// Draw the raw scene onto an offscreen canvas, return ImageData
+function drawRawScene(w, h, t){
+  const off = document.createElement('canvas');
+  off.width=w; off.height=h;
+  const c = off.getContext('2d');
+
+  // ── SKY ──
+  const skyG = c.createLinearGradient(0,0,0,h*0.65);
+  skyG.addColorStop(0,'#1a3a6a'); skyG.addColorStop(0.5,'#4a80c0'); skyG.addColorStop(1,'#88b8e8');
+  c.fillStyle=skyG; c.fillRect(0,0,w,h*0.65);
+
+  // Sun
+  const sunX=w*0.72, sunY=h*0.12;
+  const sunG=c.createRadialGradient(sunX,sunY,0,sunX,sunY,w*0.12);
+  sunG.addColorStop(0,'rgba(255,240,180,0.95)'); sunG.addColorStop(0.4,'rgba(255,220,100,0.6)');
+  sunG.addColorStop(1,'rgba(255,180,50,0)');
+  c.fillStyle=sunG; c.fillRect(0,0,w,h*0.65);
+  c.fillStyle='rgba(255,245,200,0.98)'; c.beginPath(); c.arc(sunX,sunY,w*0.038,0,Math.PI*2); c.fill();
+
+  // Clouds
+  [[0.12,0.14,0.9],[0.38,0.10,0.7],[0.6,0.17,0.8],[0.82,0.12,0.6]].forEach(([cx,cy,s])=>{
+    const ox = ((cx*1.2+t*0.00015)%1.2-0.1)*w;
+    c.fillStyle='rgba(255,255,255,0.85)';
+    c.beginPath(); c.arc(ox,cy*h,w*0.06*s,0,Math.PI*2);
+    c.arc(ox+w*0.05*s,cy*h-h*0.01,w*0.045*s,0,Math.PI*2);
+    c.arc(ox-w*0.05*s,(cy+0.01)*h,w*0.04*s,0,Math.PI*2);
+    c.fill();
+  });
+
+  // Birds flying
+  birds_scene.forEach(b=>{
+    const bx=((b.x+t*b.sp)%1.1-0.05)*w, by=b.y*h;
+    c.strokeStyle='rgba(0,0,0,0.7)'; c.lineWidth=1.5;
+    c.beginPath(); c.moveTo(bx-8,by); c.quadraticCurveTo(bx-4,by-5,bx,by);
+    c.moveTo(bx,by); c.quadraticCurveTo(bx+4,by-5,bx+8,by); c.stroke();
+  });
+
+  // Mountains
+  mountains.forEach(m=>{
+    const mg=c.createLinearGradient(m.x*w,(1-m.h)*h*0.65,(m.x+m.w)*w,h*0.65);
+    mg.addColorStop(0,'#5a6878'); mg.addColorStop(0.6,'#7a8898'); mg.addColorStop(1,'#8a9aaa');
+    c.fillStyle=mg;
+    c.beginPath(); c.moveTo(m.x*w,h*0.65); c.lineTo((m.x+m.w*0.5)*w,(1-m.h)*h*0.65);
+    c.lineTo((m.x+m.w)*w,h*0.65); c.fill();
+    // Snow cap
+    c.fillStyle='rgba(255,255,255,0.85)';
+    c.beginPath(); c.moveTo((m.x+m.w*0.5)*w,(1-m.h)*h*0.65);
+    c.lineTo((m.x+m.w*0.38)*w,(1-m.h*0.8)*h*0.65);
+    c.lineTo((m.x+m.w*0.62)*w,(1-m.h*0.8)*h*0.65); c.fill();
+  });
+
+  // Horizon mist
+  const mistG=c.createLinearGradient(0,h*0.55,0,h*0.65);
+  mistG.addColorStop(0,'rgba(180,210,240,0)'); mistG.addColorStop(1,'rgba(180,210,240,0.4)');
+  c.fillStyle=mistG; c.fillRect(0,h*0.55,w,h*0.1);
+
+  // ── GROUND ──
+  const gndG=c.createLinearGradient(0,h*0.62,0,h);
+  gndG.addColorStop(0,'#3a6820'); gndG.addColorStop(0.4,'#2a5018'); gndG.addColorStop(1,'#1a3808');
+  c.fillStyle=gndG; c.fillRect(0,h*0.62,w,h*0.38);
+
+  // River
+  const rivG=c.createLinearGradient(w*0.3,0,w*0.45,0);
+  rivG.addColorStop(0,'#2a5888'); rivG.addColorStop(0.5,'#3a78b8'); rivG.addColorStop(1,'#2a5888');
+  c.fillStyle=rivG;
+  c.beginPath(); c.moveTo(w*0.28,h*0.65); c.bezierCurveTo(w*0.32,h*0.72,w*0.38,h*0.78,w*0.35,h);
+  c.bezierCurveTo(w*0.42,h*0.78,w*0.48,h*0.72,w*0.46,h*0.65); c.fill();
+  // River shimmer
+  c.strokeStyle='rgba(255,255,255,0.3)'; c.lineWidth=1;
+  for(let i=0;i<4;i++){
+    const ry=h*(0.67+i*0.05);
+    const rx=w*0.36+Math.sin(t*0.001+i)*w*0.015;
+    c.beginPath(); c.moveTo(rx-w*0.025,ry); c.lineTo(rx+w*0.025,ry); c.stroke();
+  }
+
+  // Grass detail
+  c.fillStyle='rgba(80,180,40,0.3)';
+  for(let i=0;i<80;i++){
+    const gx=((i*137.5)%w), gy=h*(0.63+((i*73)%100)/100*0.35);
+    c.fillRect(gx,gy,2,h*0.02+Math.sin(t*0.002+i)*h*0.005);
+  }
+
+  // Flowers
+  flowers.forEach(f=>{
+    const fx=f.x*w, fy=f.y*h;
+    c.fillStyle='#3a8020'; c.fillRect(fx,fy,2,h*0.025);
+    c.fillStyle=f.col;
+    c.beginPath(); c.arc(fx,fy,w*0.008,0,Math.PI*2); c.fill();
+    // UV ring (visible in base)
+    c.strokeStyle='rgba(200,100,255,0.3)'; c.lineWidth=1;
+    c.beginPath(); c.arc(fx,fy,w*0.012,0,Math.PI*2); c.stroke();
+  });
+
+  // Deer
+  const deerX = w*0.6+Math.sin(t*0.0003)*w*0.015;
+  const deerY = h*0.73;
+  c.fillStyle='#c87040';
+  // Body
+  c.beginPath(); c.ellipse(deerX,deerY,w*0.038,h*0.045,0,0,Math.PI*2); c.fill();
+  // Head
+  c.beginPath(); c.ellipse(deerX+w*0.045,deerY-h*0.03,w*0.018,h*0.022,0.3,0,Math.PI*2); c.fill();
+  // Legs
+  c.fillStyle='#a05030'; c.fillRect(deerX-w*0.025,deerY+h*0.03,w*0.01,h*0.04);
+  c.fillRect(deerX-w*0.005,deerY+h*0.03,w*0.01,h*0.04);
+  c.fillRect(deerX+w*0.015,deerY+h*0.03,w*0.01,h*0.04);
+  c.fillRect(deerX+w*0.03,deerY+h*0.03,w*0.01,h*0.04);
+  // Antlers
+  c.strokeStyle='#7a4020'; c.lineWidth=2;
+  c.beginPath(); c.moveTo(deerX+w*0.045,deerY-h*0.05); c.lineTo(deerX+w*0.035,deerY-h*0.1);
+  c.lineTo(deerX+w*0.02,deerY-h*0.08); c.stroke();
+  c.beginPath(); c.moveTo(deerX+w*0.045,deerY-h*0.05); c.lineTo(deerX+w*0.06,deerY-h*0.09);
+  c.lineTo(deerX+w*0.07,deerY-h*0.07); c.stroke();
+  c.fillStyle='rgba(0,0,0,0.8)'; c.beginPath(); c.arc(deerX+w*0.055,deerY-h*0.025,w*0.004,0,Math.PI*2); c.fill();
+
+  // Insects (butterflies)
+  insects.forEach((ins,i)=>{
+    const ix=((ins.x+t*ins.sp)%1.1-0.05)*w;
+    const iy=ins.y*h+Math.sin(t*0.003+i)*h*0.02;
+    const wingFlap=Math.sin(t*0.008+i)*0.4;
+    c.fillStyle=i%2===0?'#ff8800':'#8844ff';
+    c.save(); c.translate(ix,iy);
+    c.beginPath(); c.ellipse(-w*0.012,0,w*0.012,h*0.01,wingFlap,0,Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(w*0.012,0,w*0.012,h*0.01,-wingFlap,0,Math.PI*2); c.fill();
+    c.restore();
+  });
+
+  // Trees (back layer first)
+  trees.forEach(tr=>{
+    const tx=tr.x*w, ty=h*0.62, th=tr.h*h, tw=tr.w*w;
+    // Trunk
+    c.fillStyle='#5a3a18'; c.fillRect(tx-tw*0.15,ty-th*0.1,tw*0.3,th*0.15);
+    // Foliage
+    const foliageG=c.createRadialGradient(tx,ty-th,0,tx,ty-th,tw*1.6);
+    foliageG.addColorStop(0,tr.dark?'#2a5010':'#3a7018');
+    foliageG.addColorStop(1,tr.dark?'#1a3808':'#2a5010');
+    c.fillStyle=foliageG;
+    c.beginPath(); c.ellipse(tx,ty-th,tw*1.2,tw*1.4,0,0,Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(tx-tw*0.5,ty-th*0.7,tw*0.9,tw*1.0,0,0,Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(tx+tw*0.5,ty-th*0.7,tw*0.9,tw*1.0,0,0,Math.PI*2); c.fill();
+  });
+
+  // ── Vignette ──
+  const vig=c.createRadialGradient(w/2,h/2,w*0.25,w/2,h/2,w*0.72);
+  vig.addColorStop(0,'rgba(0,0,0,0)'); vig.addColorStop(1,'rgba(0,0,0,0.28)');
+  c.fillStyle=vig; c.fillRect(0,0,w,h);
+
+  return off;
+}
+
+// ══════════════════════════════════════════════════════
+// ANIMAL VISION DEFINITIONS — 21 animals
+// ══════════════════════════════════════════════════════
+const ANIMALS = [
+  {
+    name:'Humano', emoji:'🧑', visionType:'Tricromacia (RGB)',
+    color:'#58a6ff', tagColor:'rgba(88,166,255,0.15)', tagBorder:'rgba(88,166,255,0.4)',
+    tags:['3 conos','180° campo visual','Alta resolución central'],
+    desc:'La visión humana detecta rojo, verde y azul. Tenemos alta resolución central (fóvea) pero visión periférica borrosa. Vemos ~10 millones de colores, pero perdemos detalle en los bordes.',
+    render(imgData,w,h,t){ return drawRawScene(w,h,t); }
+  },
+  {
+    name:'Águila Real', emoji:'🦅', visionType:'Tetracromacia (4 conos + UV)',
+    color:'#ffd700', tagColor:'rgba(255,215,0,0.15)', tagBorder:'rgba(255,215,0,0.4)',
+    tags:['Zoom 8×','UV visible','340° campo'],
+    desc:'Las águilas tienen 4 tipos de conos incluyendo UV. Su resolución central es 8× la humana — ven un conejo a 3 km. Pueden ver las trazas de orina de los roedores que brillan en UV.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      // UV overlay — pee trails and flower centers glow
+      c2.fillStyle='rgba(180,0,255,0.15)'; c2.fillRect(0,0,w,h);
+      // Flowers glow UV
+      flowers.forEach(f=>{ c2.fillStyle='rgba(220,100,255,0.6)'; c2.beginPath(); c2.arc(f.x*w,f.y*h,w*0.018,0,Math.PI*2); c2.fill(); });
+      // Deer urine trail UV glow
+      c2.fillStyle='rgba(255,120,255,0.35)';
+      c2.beginPath(); c2.ellipse(w*0.6,h*0.82,w*0.06,h*0.02,0,0,Math.PI*2); c2.fill();
+      // Super sharp center (zoom effect — just sharpen center)
+      const zoomG=c2.createRadialGradient(w/2,h/2,0,w/2,h/2,w*0.25);
+      zoomG.addColorStop(0,'rgba(255,255,255,0.04)'); zoomG.addColorStop(1,'rgba(0,0,0,0)');
+      c2.fillStyle=zoomG; c2.fillRect(0,0,w,h);
+      return off;
+    }
+  },
+  {
+    name:'Perro', emoji:'🐕', visionType:'Dicromacia (azul-amarillo)',
+    color:'#88aadd', tagColor:'rgba(136,170,221,0.15)', tagBorder:'rgba(136,170,221,0.4)',
+    tags:['Daltónico rojo-verde','240° campo','Mejor en movimiento'],
+    desc:'Los perros son dicrómatas — ven azules y amarillos pero no distinguen rojo de verde. Su mundo es como un atardecer perpetuo. Sin embargo, detectan movimiento mucho mejor que los humanos.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      // Apply dichromat filter (red-green colorblind)
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        // Deuteranopia: shift reds to yellow-green range
+        d[i]  =Math.round(0.367*r+0.861*g-0.228*b);
+        d[i+1]=Math.round(0.28*r+0.673*g+0.047*b);
+        d[i+2]=Math.round(-0.012*r+0.043*g+0.969*b);
+        d[i]=Math.max(0,Math.min(255,d[i]));
+        d[i+1]=Math.max(0,Math.min(255,d[i+1]));
+        d[i+2]=Math.max(0,Math.min(255,d[i+2]));
+      }
+      c2.putImageData(id,0,0);
+      return off;
+    }
+  },
+  {
+    name:'Abeja', emoji:'🐝', visionType:'UV + Verde + Azul (sin rojo)',
+    color:'#ffcc00', tagColor:'rgba(255,204,0,0.15)', tagBorder:'rgba(255,204,0,0.4)',
+    tags:['Ve UV','No ve rojo','Flores guían abejas'],
+    desc:'Las abejas ven ultravioleta, verde y azul, pero no el rojo. Las flores tienen patrones UV invisibles para nosotros que actúan como "pistas de aterrizaje" guiando exactamente a las abejas hacia el néctar.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        // Shift: UV→visible (blue channel boost), remove red
+        const r=d[i],g=d[i+1],b=d[i+2];
+        d[i]=Math.round(g*0.3); // red channel mostly gone
+        d[i+1]=Math.round(g*0.9+b*0.1);
+        d[i+2]=Math.min(255,Math.round(b*1.2+r*0.3)); // UV shows as blue
+      }
+      c2.putImageData(id,0,0);
+      // UV flower halos — huge bright guides
+      flowers.forEach(f=>{
+        const fg=c2.createRadialGradient(f.x*w,f.y*h,0,f.x*w,f.y*h,w*0.04);
+        fg.addColorStop(0,'rgba(255,200,0,0.9)'); fg.addColorStop(0.4,'rgba(180,80,255,0.5)'); fg.addColorStop(1,'rgba(0,0,0,0)');
+        c2.fillStyle=fg; c2.beginPath(); c2.arc(f.x*w,f.y*h,w*0.04,0,Math.PI*2); c2.fill();
+      });
+      return off;
+    }
+  },
+  {
+    name:'Serpiente', emoji:'🐍', visionType:'Infrarrojo térmico + visible',
+    color:'#ff4400', tagColor:'rgba(255,68,0,0.15)', tagBorder:'rgba(255,68,0,0.4)',
+    tags:['Infrarrojo','Detección de calor','Visión dual'],
+    desc:'Las pitones y boas tienen órganos termorreceptores (fosa loreal) que detectan diferencias de temperatura de 0.003°C. Ven un mapa de calor superpuesto a su visión regular, perfecto para cazar mamíferos de sangre caliente en la oscuridad.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      // Dark base — thermal overrides color
+      c2.fillStyle='rgba(0,0,20,0.7)'; c2.fillRect(0,0,w,h);
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        const heat=(r*0.3+g*0.2+b*0.05)/255;
+        d[i]=Math.min(255,heat*200+20);
+        d[i+1]=Math.min(255,heat*80);
+        d[i+2]=Math.min(255,heat*20);
+      }
+      c2.putImageData(id,0,0);
+      // Hot objects: deer (warm blood), sun, ground warm
+      // Deer very hot
+      const deerX=w*0.6,deerY=h*0.72;
+      const dg=c2.createRadialGradient(deerX,deerY,0,deerX,deerY,w*0.08);
+      dg.addColorStop(0,'rgba(255,255,100,0.95)'); dg.addColorStop(0.4,'rgba(255,150,0,0.7)'); dg.addColorStop(1,'rgba(180,0,0,0)');
+      c2.fillStyle=dg; c2.beginPath(); c2.arc(deerX,deerY,w*0.08,0,Math.PI*2); c2.fill();
+      // Ground warm from sun
+      const gg2=c2.createLinearGradient(0,h*0.65,0,h);
+      gg2.addColorStop(0,'rgba(180,60,0,0.4)'); gg2.addColorStop(1,'rgba(80,20,0,0.3)');
+      c2.fillStyle=gg2; c2.fillRect(0,h*0.65,w,h*0.35);
+      // Cool sky — blue tinge
+      c2.fillStyle='rgba(0,0,80,0.3)'; c2.fillRect(0,0,w,h*0.62);
+      // Insects warm
+      insects.forEach(ins=>{ c2.fillStyle='rgba(255,200,50,0.6)'; c2.beginPath(); c2.arc(((ins.x+t*ins.sp)%1.1-0.05)*w,ins.y*h,w*0.008,0,Math.PI*2); c2.fill(); });
+      return off;
+    }
+  },
+  {
+    name:'Murciélago', emoji:'🦇', visionType:'Ecolocalización sónica',
+    color:'#9966cc', tagColor:'rgba(153,102,204,0.15)', tagBorder:'rgba(153,102,204,0.4)',
+    tags:['Sonar 120kHz','Oscuridad total','Mapa 3D'],
+    desc:'Los murciélagos construyen un mapa 3D del mundo con ondas de sonido de 120kHz. "Ven" objetos con precisión de 0.3mm. En la oscuridad, perciben tamaño, textura, velocidad y distancia de cada objeto simultáneamente.',
+    render(imgData,w,h,t){
+      // Dark with sonar waves
+      const off=document.createElement('canvas'); off.width=w; off.height=h;
+      const c2=off.getContext('2d');
+      c2.fillStyle='#050010'; c2.fillRect(0,0,w,h);
+      // Sonar origin — bat's "eye" position (center-top)
+      const bx=w*0.5, by=h*0.1;
+      const waveCount=6;
+      for(let wi=0;wi<waveCount;wi++){
+        const phase=((t*0.002+wi/waveCount)%1);
+        const radius=phase*w*0.9;
+        const alpha=(1-phase)*0.35;
+        // Sonar arc
+        c2.strokeStyle=`rgba(120,200,255,${alpha})`;
+        c2.lineWidth=1.5;
+        c2.beginPath(); c2.arc(bx,by,radius,Math.PI*0.1,Math.PI*0.9); c2.stroke();
+      }
+      // Objects as sonar echoes — bright outlines only
+      // Mountains as lines
+      mountains.forEach(m=>{
+        c2.strokeStyle='rgba(80,200,255,0.5)'; c2.lineWidth=1;
+        c2.beginPath(); c2.moveTo(m.x*w,h*0.65); c2.lineTo((m.x+m.w*0.5)*w,(1-m.h)*h*0.65); c2.lineTo((m.x+m.w)*w,h*0.65); c2.stroke();
+      });
+      // Ground line
+      c2.strokeStyle='rgba(80,200,255,0.4)'; c2.lineWidth=2;
+      c2.beginPath(); c2.moveTo(0,h*0.65); c2.lineTo(w,h*0.65); c2.stroke();
+      // Trees as dots/blobs
+      trees.forEach(tr=>{
+        c2.strokeStyle='rgba(100,220,255,0.4)'; c2.lineWidth=1;
+        c2.beginPath(); c2.arc(tr.x*w,h*0.62-tr.h*h,tr.w*w*1.3,0,Math.PI*2); c2.stroke();
+      });
+      // Insects — very bright (prey)
+      insects.forEach((ins,i)=>{
+        const ix=((ins.x+t*ins.sp)%1.1-0.05)*w, iy=ins.y*h;
+        const ig=c2.createRadialGradient(ix,iy,0,ix,iy,w*0.025);
+        ig.addColorStop(0,'rgba(255,255,100,0.9)'); ig.addColorStop(1,'rgba(255,200,0,0)');
+        c2.fillStyle=ig; c2.beginPath(); c2.arc(ix,iy,w*0.025,0,Math.PI*2); c2.fill();
+      });
+      // Deer outline
+      const deerX=w*0.6,deerY=h*0.72;
+      c2.strokeStyle='rgba(100,220,255,0.6)'; c2.lineWidth=1.5;
+      c2.beginPath(); c2.ellipse(deerX,deerY,w*0.04,h*0.045,0,0,Math.PI*2); c2.stroke();
+      // Frequency spectrum at bottom
+      for(let x=0;x<w;x+=3){
+        const freq=Math.sin(x*0.05+t*0.01)*0.5+0.5;
+        c2.fillStyle=`rgba(100,200,255,${freq*0.4})`;
+        c2.fillRect(x,h-20,2,freq*18);
+      }
+      return off;
+    }
+  },
+  {
+    name:'Toro', emoji:'🐂', visionType:'Dicromacia (azul-verde, sin rojo)',
+    color:'#88aaff', tagColor:'rgba(136,170,255,0.15)', tagBorder:'rgba(136,170,255,0.4)',
+    tags:['No ve rojo','Reacciona al movimiento','340° campo visual'],
+    desc:'Los toros no pueden ver el color rojo. La capa roja del torero no les irrita — reaccionan al movimiento. Su mundo es una paleta de azules y verdes. Tienen campo visual casi panorámico de 340° pero poco enfoque frontal.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        // Protanopia (no red cones) — reds become dark/greenish
+        d[i]=Math.round(0.152*r+0.848*g);
+        d[i+1]=Math.round(0.114*r+0.886*g);
+        d[i+2]=b;
+        d[i]=Math.max(0,Math.min(255,d[i]));
+        d[i+1]=Math.max(0,Math.min(255,d[i+1]));
+      }
+      c2.putImageData(id,0,0);
+      // Wide fisheye vignette — peripheral blur effect
+      const leftVig=c2.createLinearGradient(0,0,w*0.15,0);
+      leftVig.addColorStop(0,'rgba(0,0,0,0)'); leftVig.addColorStop(1,'rgba(0,0,0,0)');
+      c2.fillStyle=leftVig; c2.fillRect(0,0,w*0.15,h);
+      return off;
+    }
+  },
+  {
+    name:'Mantis Religiosa', emoji:'🦗', visionType:'Visión compuesta + 3D estereoscópica',
+    color:'#66cc44', tagColor:'rgba(102,204,68,0.15)', tagBorder:'rgba(102,204,68,0.4)',
+    tags:['Ojo compuesto','Detección de movimiento','Única en insectos'],
+    desc:'La mantis religiosa es el único insecto con visión 3D real. Sus enormes ojos compuestos tienen miles de facetas, cada una apuntando en dirección diferente. Detecta movimientos imperceptibles para el ojo humano.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      // Pixelate to simulate compound eye facets
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      const facetSize=Math.max(4,Math.floor(w*0.018));
+      // Average color per facet
+      const facetData=new Uint8ClampedArray(d.length);
+      for(let fy=0;fy<h;fy+=facetSize){
+        for(let fx=0;fx<w;fx+=facetSize){
+          let r=0,g=0,b=0,count=0;
+          for(let dy=0;dy<facetSize&&fy+dy<h;dy++){
+            for(let dx=0;dx<facetSize&&fx+dx<w;dx++){
+              const idx=((fy+dy)*w+(fx+dx))*4;
+              r+=d[idx];g+=d[idx+1];b+=d[idx+2];count++;
+            }
+          }
+          r=r/count; g=g/count; b=b/count;
+          for(let dy=0;dy<facetSize&&fy+dy<h;dy++){
+            for(let dx=0;dx<facetSize&&fx+dx<w;dx++){
+              const idx=((fy+dy)*w+(fx+dx))*4;
+              facetData[idx]=r; facetData[idx+1]=g; facetData[idx+2]=b; facetData[idx+3]=255;
+            }
+          }
+        }
+      }
+      const newId=new ImageData(facetData,w,h);
+      c2.putImageData(newId,0,0);
+      // Draw hexagonal grid overlay
+      c2.strokeStyle='rgba(0,0,0,0.3)'; c2.lineWidth=0.8;
+      for(let fy=0;fy<h;fy+=facetSize){
+        for(let fx=0;fx<w;fx+=facetSize){
+          c2.strokeRect(fx,fy,facetSize,facetSize);
+        }
+      }
+      // Green tint (mantis color sensitivity)
+      c2.fillStyle='rgba(0,80,0,0.15)'; c2.fillRect(0,0,w,h);
+      return off;
+    }
+  },
+  {
+    name:'Gato', emoji:'🐱', visionType:'Dicromacia + vision nocturna (tapetum)',
+    color:'#aaddff', tagColor:'rgba(170,221,255,0.15)', tagBorder:'rgba(170,221,255,0.4)',
+    tags:['6× más sensible','Azul-verde','Visión nocturna'],
+    desc:'Los gatos tienen 6 veces más sensibilidad a la luz que los humanos gracias al tapetum lucidum (la capa reflectante que hace brillar sus ojos). Ven bien con 1/6 de la luz que necesitamos, pero con menos detalle y colores apagados.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        // Desaturate reds, boost brightness
+        const bright=r*0.3+g*0.59+b*0.11;
+        d[i]=Math.min(255,bright*0.7+b*0.3);
+        d[i+1]=Math.min(255,bright*0.85+g*0.2);
+        d[i+2]=Math.min(255,bright*0.9+b*0.5);
+      }
+      c2.putImageData(id,0,0);
+      // Low light — slight glow/boost
+      c2.fillStyle='rgba(100,140,200,0.08)'; c2.fillRect(0,0,w,h);
+      // Motion blur on moving things (insects)
+      insects.forEach((ins,i)=>{
+        const ix=((ins.x+t*ins.sp)%1.1-0.05)*w, iy=ins.y*h;
+        c2.fillStyle='rgba(255,255,255,0.15)';
+        c2.fillRect(ix-w*0.015,iy-2,w*0.03,4);
+      });
+      return off;
+    }
+  },
+  {
+    name:'Camaleón', emoji:'🦎', visionType:'360° panorámico independiente',
+    color:'#88dd44', tagColor:'rgba(136,221,68,0.15)', tagBorder:'rgba(136,221,68,0.4)',
+    tags:['340° campo','Ojos independientes','Zoom activo'],
+    desc:'Los camaleones pueden mover cada ojo de forma completamente independiente. Pueden ver hacia adelante Y hacia atrás AL MISMO TIEMPO. Cuando cazan, ambos ojos convergen hacia adelante para ver en 3D.',
+    render(imgData,w,h,t){
+      const off1=drawRawScene(w,h,t);
+      const off2=drawRawScene(w,h,t);
+      // Split into two halves — each shows different angle
+      const result=document.createElement('canvas'); result.width=w; result.height=h;
+      const rc=result.getContext('2d');
+      // Left eye: normal view
+      rc.drawImage(off1,0,0,w,h);
+      // Right eye: rotated/different angle
+      rc.save();
+      rc.globalAlpha=0.7;
+      rc.translate(w,0); rc.scale(-1,1);
+      // Show slightly different part of scene
+      rc.drawImage(off2,-w*0.1,0,w*0.6,h,0,0,w*0.5,h);
+      rc.restore();
+      // Dividing line
+      rc.strokeStyle='rgba(0,0,0,0.5)'; rc.lineWidth=2;
+      rc.beginPath(); rc.moveTo(w/2,0); rc.lineTo(w/2,h); rc.stroke();
+      // Labels
+      rc.fillStyle='rgba(0,0,0,0.5)'; rc.fillRect(w*0.03,h*0.03,w*0.15,h*0.06);
+      rc.fillStyle='#88dd44'; rc.font=`bold ${Math.floor(w*0.022)}px Nunito`;
+      rc.textAlign='center'; rc.fillText('Ojo izq.',w*0.25/2+w*0.015,h*0.07);
+      rc.fillStyle='rgba(0,0,0,0.5)'; rc.fillRect(w*0.52,h*0.03,w*0.15,h*0.06);
+      rc.fillStyle='#88dd44'; rc.fillText('Ojo der.',w*0.75,h*0.07);
+      return result;
+    }
+  },
+  {
+    name:'Tiburón', emoji:'🦈', visionType:'Monocromática + electrorrecepción',
+    color:'#4488aa', tagColor:'rgba(68,136,170,0.15)', tagBorder:'rgba(68,136,170,0.4)',
+    tags:['Ampolla de Lorenzini','Baja luz','Detecta campos eléctricos'],
+    desc:'Los tiburones prácticamente no distinguen colores, pero sus Ampollas de Lorenzini detectan campos eléctricos de hasta 0.005 microvolts/cm. Perciben el latido cardíaco de una presa enterrada en la arena a metros de distancia.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const gray=Math.round(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11);
+        // Underwater blue-gray tint
+        d[i]=Math.round(gray*0.7+10);
+        d[i+1]=Math.round(gray*0.85+15);
+        d[i+2]=Math.round(gray*1.1+25);
+      }
+      c2.putImageData(id,0,0);
+      // Electric field lines
+      c2.strokeStyle='rgba(100,200,255,0.2)'; c2.lineWidth=0.8;
+      for(let y=0;y<h;y+=h*0.08){
+        c2.beginPath(); c2.moveTo(0,y); c2.bezierCurveTo(w*0.3,y+h*0.03,w*0.7,y-h*0.03,w,y); c2.stroke();
+      }
+      // Electric hotspot where deer is (heartbeat)
+      const deerX=w*0.6,deerY=h*0.73;
+      const pulse=Math.sin(t*0.008)*0.5+0.5;
+      const eg=c2.createRadialGradient(deerX,deerY,0,deerX,deerY,w*0.1);
+      eg.addColorStop(0,`rgba(100,220,255,${0.4*pulse})`); eg.addColorStop(1,'rgba(0,0,0,0)');
+      c2.fillStyle=eg; c2.beginPath(); c2.arc(deerX,deerY,w*0.1,0,Math.PI*2); c2.fill();
+      // Underwater tint overlay
+      c2.fillStyle='rgba(0,30,60,0.25)'; c2.fillRect(0,0,w,h);
+      return off;
+    }
+  },
+  {
+    name:'Mantarraya', emoji:'🐡', visionType:'Monocromática amplia + polarización',
+    color:'#4499cc', tagColor:'rgba(68,153,204,0.15)', tagBorder:'rgba(68,153,204,0.4)',
+    tags:['Luz polarizada','Bajo contraste','360° acuático'],
+    desc:'Las mantas ven luz polarizada, lo que les permite ver patrones en el agua invisible para otros. Su visión es como una cámara de contraste muy bajo, pero detectan la dirección de vibración de la luz para orientarse en el océano.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        const gray=r*0.3+g*0.59+b*0.11;
+        // Low contrast + blue tint
+        d[i]=Math.round(gray*0.5+b*0.2+50);
+        d[i+1]=Math.round(gray*0.55+b*0.3+60);
+        d[i+2]=Math.round(gray*0.4+b*0.7+80);
+      }
+      c2.putImageData(id,0,0);
+      // Polarization grid pattern
+      c2.strokeStyle='rgba(180,220,255,0.08)'; c2.lineWidth=1;
+      const angle=t*0.001%(Math.PI);
+      const cos=Math.cos(angle), sin2=Math.sin(angle);
+      for(let i=-w;i<w+h;i+=20){
+        c2.beginPath(); c2.moveTo(i*cos-h*sin2,i*sin2+h*cos); c2.lineTo(i*cos+h*sin2,i*sin2-h*cos); c2.stroke();
+      }
+      c2.fillStyle='rgba(0,40,80,0.2)'; c2.fillRect(0,0,w,h);
+      return off;
+    }
+  },
+  {
+    name:'Mariposa', emoji:'🦋', visionType:'Pentacromacia (5 tipos de fotorreceptores)',
+    color:'#ff88cc', tagColor:'rgba(255,136,204,0.15)', tagBorder:'rgba(255,136,204,0.4)',
+    tags:['5 conos','UV visible','Colores imposibles'],
+    desc:'Algunas mariposas tienen hasta 15 tipos de fotorreceptores. Perciben colores en el espectro UV, violeta, azul, verde, amarillo y rojo con matices que ningún humano puede imaginar. Las flores son mundos de luz para ellas.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        // Hyper-saturate and shift spectrum
+        const h2=r*0.5+b*0.5;
+        d[i]=Math.min(255,r*1.4+h2*0.2);
+        d[i+1]=Math.min(255,g*1.3);
+        d[i+2]=Math.min(255,b*1.5+r*0.3);
+      }
+      c2.putImageData(id,0,0);
+      // Huge UV flower explosions
+      flowers.forEach(f=>{
+        const fg=c2.createRadialGradient(f.x*w,f.y*h,0,f.x*w,f.y*h,w*0.06);
+        fg.addColorStop(0,'rgba(255,255,255,0.9)'); fg.addColorStop(0.3,'rgba(255,100,255,0.6)'); fg.addColorStop(0.7,'rgba(100,0,255,0.3)'); fg.addColorStop(1,'rgba(0,0,0,0)');
+        c2.fillStyle=fg; c2.beginPath(); c2.arc(f.x*w,f.y*h,w*0.06,0,Math.PI*2); c2.fill();
+      });
+      return off;
+    }
+  },
+  {
+    name:'Caballo', emoji:'🐴', visionType:'Dicromacia + 350° panorámico',
+    color:'#cc8844', tagColor:'rgba(204,136,68,0.15)', tagBorder:'rgba(204,136,68,0.4)',
+    tags:['350° campo','Punto ciego frontal','Daltónico rojo'],
+    desc:'Los caballos tienen el campo visual más amplio de los mamíferos terrestres comunes: 350°. Pero tienen un punto ciego directo frente a su nariz. No ven rojo — las zanahorias les parecen amarillas. Sus ojos son los más grandes de cualquier mamífero terrestre.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        d[i]=Math.round(0.367*r+0.861*g-0.228*b);
+        d[i+1]=Math.round(0.28*r+0.673*g+0.047*b);
+        d[i+2]=b;
+        d[i]=Math.max(0,Math.min(255,d[i]));
+        d[i+1]=Math.max(0,Math.min(255,d[i+1]));
+      }
+      c2.putImageData(id,0,0);
+      // Front blind spot
+      const bsW=w*0.12, bsH=h*0.35;
+      c2.fillStyle='rgba(0,0,0,0.55)';
+      c2.beginPath(); c2.ellipse(w/2,h/2,bsW,bsH,0,0,Math.PI*2); c2.fill();
+      c2.strokeStyle='rgba(255,255,255,0.2)'; c2.lineWidth=1;
+      c2.beginPath(); c2.ellipse(w/2,h/2,bsW,bsH,0,0,Math.PI*2); c2.stroke();
+      return off;
+    }
+  },
+  {
+    name:'Pulpo', emoji:'🐙', visionType:'Monocromático + polarización de luz',
+    color:'#cc4488', tagColor:'rgba(204,68,136,0.15)', tagBorder:'rgba(204,68,136,0.4)',
+    tags:['Un solo fotorreceptor','Luz polarizada','Pupila en W'],
+    desc:'El pulpo solo tiene un tipo de fotorreceptor (es "daltónico") pero puede percibir la polarización de la luz. Su pupila en forma de W es capaz de detectar patrones de luz imposibles para el ojo circular. Se cree que detectan colores mediante aberración cromática.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const gray=Math.round(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11);
+        // Slight purple tint
+        d[i]=Math.min(255,gray+30); d[i+1]=gray; d[i+2]=Math.min(255,gray+20);
+      }
+      c2.putImageData(id,0,0);
+      // Polarization wave interference pattern
+      for(let x=0;x<w;x+=4){
+        for(let y=0;y<h;y+=4){
+          const pol=Math.sin(x*0.04+t*0.002)*Math.cos(y*0.04);
+          if(pol>0.7){
+            c2.fillStyle=`rgba(255,200,255,${(pol-0.7)*0.4})`;
+            c2.fillRect(x,y,4,4);
+          }
+        }
+      }
+      // W pupil overlay
+      c2.strokeStyle='rgba(255,255,255,0.06)'; c2.lineWidth=1;
+      c2.beginPath();
+      for(let px=0;px<w;px+=w*0.05){
+        const py=h/2+Math.sin(px*0.01)*h*0.08;
+        px===0?c2.moveTo(px,py):c2.lineTo(px,py);
+      }
+      c2.stroke();
+      return off;
+    }
+  },
+  {
+    name:'Libélula', emoji:'🕷️', visionType:'30.000 facetas, 360° compuesto',
+    color:'#44ccaa', tagColor:'rgba(68,204,170,0.15)', tagBorder:'rgba(68,204,170,0.4)',
+    tags:['360° sin puntos ciegos','Ultra movimiento','Flicker 300Hz'],
+    desc:'Las libélulas tienen 30.000 facetas por ojo y cubren casi 360°. Detectan movimiento a frecuencias de 300 Hz (humanos 60 Hz), lo que hace que todo movimiento se vea en cámara lenta ultra-detallada. Capturan el 95% de sus presas — los cazadores más efectivos del reino animal.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      const fSize=Math.max(3,Math.floor(w*0.012));
+      // Hexagonal compound eye effect
+      const out=new Uint8ClampedArray(d.length);
+      for(let fy=0;fy<h;fy+=fSize){
+        for(let fx=0;fx<w;fx+=fSize){
+          let r=0,g=0,b=0,cnt=0;
+          for(let dy=0;dy<fSize&&fy+dy<h;dy++) for(let dx=0;dx<fSize&&fx+dx<w;dx++){
+            const idx=((fy+dy)*w+(fx+dx))*4;
+            r+=d[idx];g+=d[idx+1];b+=d[idx+2];cnt++;
+          }
+          r/=cnt;g/=cnt;b/=cnt;
+          // Enhance UV (boost blue-green)
+          const br=r*0.7,bg=Math.min(255,g*1.1),bb=Math.min(255,b*1.3);
+          for(let dy=0;dy<fSize&&fy+dy<h;dy++) for(let dx=0;dx<fSize&&fx+dx<w;dx++){
+            const idx=((fy+dy)*w+(fx+dx))*4;
+            out[idx]=br;out[idx+1]=bg;out[idx+2]=bb;out[idx+3]=255;
+          }
+        }
+      }
+      c2.putImageData(new ImageData(out,w,h),0,0);
+      // Grid
+      c2.strokeStyle='rgba(0,0,0,0.25)'; c2.lineWidth=0.5;
+      for(let fy=0;fy<h;fy+=fSize){ c2.beginPath();c2.moveTo(0,fy);c2.lineTo(w,fy);c2.stroke(); }
+      for(let fx=0;fx<w;fx+=fSize){ c2.beginPath();c2.moveTo(fx,0);c2.lineTo(fx,h);c2.stroke(); }
+      // Motion trail on insects
+      insects.forEach((ins,i)=>{
+        const ix=((ins.x+t*ins.sp)%1.1-0.05)*w,iy=ins.y*h;
+        for(let trail=0;trail<5;trail++){
+          const tx2=ix-trail*w*0.008, ta=(5-trail)/5*0.35;
+          c2.fillStyle=`rgba(255,200,0,${ta})`;
+          c2.beginPath();c2.arc(tx2,iy,w*0.006,0,Math.PI*2);c2.fill();
+        }
+      });
+      return off;
+    }
+  },
+  {
+    name:'Delfín', emoji:'🐬', visionType:'Ecolocalización + visión binocular acuática',
+    color:'#44bbdd', tagColor:'rgba(68,187,221,0.15)', tagBorder:'rgba(68,187,221,0.4)',
+    tags:['Sonar 150kHz','Imagen de densidad','Ve a través de objetos'],
+    desc:'Los delfines "ven" con sonar de 150kHz que genera imágenes de densidad de materia. Pueden ver dentro de los objetos — detectan si una persona tiene huesos rotos, si un pez está preñado, e incluso estados emocionales por tensión muscular.',
+    render(imgData,w,h,t){
+      const off=document.createElement('canvas'); off.width=w; off.height=h;
+      const c2=off.getContext('2d');
+      // Underwater blue
+      c2.fillStyle='#001830'; c2.fillRect(0,0,w,h);
+      // Base scene very darkened/blue
+      const base=drawRawScene(w,h,t);
+      const bctx=base.getContext('2d');
+      const bid=bctx.getImageData(0,0,w,h); const bd=bid.data;
+      for(let i=0;i<bd.length;i+=4){
+        bd[i]=Math.round(bd[i]*0.15+10);
+        bd[i+1]=Math.round(bd[i+1]*0.2+20);
+        bd[i+2]=Math.round(bd[i+2]*0.5+40);
+      }
+      bctx.putImageData(bid,0,0);
+      c2.drawImage(base,0,0);
+      // Sonar cone from dolphin (center-left)
+      const dx=w*0.15, dy=h*0.5;
+      const coneAngle=Math.PI*0.35;
+      const cg=c2.createConicalGradient?null:null;
+      c2.fillStyle='rgba(0,180,255,0.06)';
+      c2.beginPath(); c2.moveTo(dx,dy);
+      c2.arc(dx,dy,w*0.95,-coneAngle/2,coneAngle/2);
+      c2.fill();
+      // Sonar rings
+      for(let ri=0;ri<5;ri++){
+        const rphase=((t*0.0018+ri/5)%1);
+        const rr=rphase*w*0.92;
+        c2.strokeStyle=`rgba(0,200,255,${(1-rphase)*0.4})`;
+        c2.lineWidth=1;
+        c2.beginPath(); c2.arc(dx,dy,rr,-coneAngle/2,coneAngle/2); c2.stroke();
+      }
+      // Objects as sonar reflections — bright wireframes
+      // Deer (internal structure visible!)
+      const deerX=w*0.6,deerY=h*0.72;
+      c2.strokeStyle='rgba(0,220,255,0.7)'; c2.lineWidth=1.5;
+      c2.beginPath(); c2.ellipse(deerX,deerY,w*0.04,h*0.045,0,0,Math.PI*2); c2.stroke();
+      // Spine
+      c2.strokeStyle='rgba(0,220,255,0.5)';
+      c2.beginPath(); c2.moveTo(deerX-w*0.035,deerY-h*0.01); c2.lineTo(deerX+w*0.05,deerY-h*0.01); c2.stroke();
+      // Ribs
+      for(let ri=0;ri<4;ri++){
+        const rx=deerX-w*0.02+ri*w*0.015;
+        c2.beginPath(); c2.moveTo(rx,deerY-h*0.01); c2.lineTo(rx,deerY+h*0.03); c2.stroke();
+      }
+      // Heartbeat pulse
+      const pulse2=Math.sin(t*0.008)*0.5+0.5;
+      const hg=c2.createRadialGradient(deerX+w*0.005,deerY-h*0.005,0,deerX,deerY,w*0.06);
+      hg.addColorStop(0,`rgba(0,255,200,${0.5*pulse2})`); hg.addColorStop(1,'rgba(0,0,0,0)');
+      c2.fillStyle=hg; c2.beginPath(); c2.arc(deerX,deerY,w*0.06,0,Math.PI*2); c2.fill();
+      // Water surface ripples
+      c2.strokeStyle='rgba(100,200,255,0.15)'; c2.lineWidth=1;
+      for(let rx=0;rx<w;rx+=w*0.12){
+        const ry=h*0.3+Math.sin(rx*0.01+t*0.002)*h*0.02;
+        c2.beginPath(); c2.moveTo(rx,ry); c2.lineTo(rx+w*0.1,ry); c2.stroke();
+      }
+      return off;
+    }
+  },
+  {
+    name:'Abejorro', emoji:'🐛', visionType:'UV + patrón de polarización solar',
+    color:'#ffaa00', tagColor:'rgba(255,170,0,0.15)', tagBorder:'rgba(255,170,0,0.4)',
+    tags:['Brújula UV solar','Flores UV','Orientación por polarización'],
+    desc:'Los abejorros usan el patrón de polarización del cielo como brújula, incluso en días nublados. El cielo entero se convierte en un mapa de orientación invisible para nosotros pero perfectamente legible para ellos.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        d[i]=Math.min(255,d[i]*0.6+d[i+2]*0.2);
+        d[i+1]=Math.min(255,d[i+1]*1.1);
+        d[i+2]=Math.min(255,d[i+2]*1.4);
+      }
+      c2.putImageData(id,0,0);
+      // Polarization map of sky (E-vector pattern)
+      for(let x=0;x<w;x+=w*0.06){
+        for(let y=0;y<h*0.62;y+=h*0.08){
+          // E-vector direction from sun
+          const dx2=x-w*0.72, dy2=y-h*0.12;
+          const ang=Math.atan2(dy2,dx2)+Math.PI/2;
+          const len=w*0.025;
+          c2.strokeStyle='rgba(200,220,255,0.35)'; c2.lineWidth=1.5;
+          c2.beginPath();
+          c2.moveTo(x-Math.cos(ang)*len,y-Math.sin(ang)*len);
+          c2.lineTo(x+Math.cos(ang)*len,y+Math.sin(ang)*len);
+          c2.stroke();
+        }
+      }
+      // Flower UV guides super bright
+      flowers.forEach(f=>{
+        const fg=c2.createRadialGradient(f.x*w,f.y*h,0,f.x*w,f.y*h,w*0.05);
+        fg.addColorStop(0,'rgba(255,255,150,0.95)'); fg.addColorStop(0.5,'rgba(255,150,0,0.5)'); fg.addColorStop(1,'rgba(0,0,0,0)');
+        c2.fillStyle=fg; c2.beginPath(); c2.arc(f.x*w,f.y*h,w*0.05,0,Math.PI*2); c2.fill();
+      });
+      return off;
+    }
+  },
+  {
+    name:'Rana', emoji:'🐸', visionType:'Solo detecta movimiento (retina especializada)',
+    color:'#44cc44', tagColor:'rgba(68,204,68,0.15)', tagBorder:'rgba(68,204,68,0.4)',
+    tags:['Solo movimiento','Estático invisible','Reflejo instantáneo'],
+    desc:'La retina de la rana contiene detectores de movimiento hardwired directamente al cerebro. Los objetos estáticos son literalmente invisibles — la rana morirá de hambre rodeada de insectos muertos. Solo ve el mundo en movimiento.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const off2=drawRawScene(w,h,t+60);
+      const c2=off.getContext('2d');
+      const id1=c2.getImageData(0,0,w,h);
+      const c2b=off2.getContext('2d');
+      const id2=c2b.getImageData(0,0,w,h);
+      const d1=id1.data, d2=id2.data;
+      // Diff between two frames — only show what changed
+      const out=new Uint8ClampedArray(d1.length);
+      for(let i=0;i<d1.length;i+=4){
+        const diff=Math.abs(d1[i]-d2[i])+Math.abs(d1[i+1]-d2[i+1])+Math.abs(d1[i+2]-d2[i+2]);
+        if(diff>8){
+          out[i]=d1[i]; out[i+1]=d1[i+1]+50; out[i+2]=d1[i+2];
+          out[i+3]=Math.min(255,diff*8);
+        } else {
+          out[i]=20; out[i+1]=30; out[i+2]=15; out[i+3]=255;
+        }
+      }
+      c2.putImageData(new ImageData(out,w,h),0,0);
+      // Only moving insects visible brightly
+      insects.forEach((ins,i)=>{
+        const ix=((ins.x+t*ins.sp)%1.1-0.05)*w, iy=ins.y*h;
+        const ig=c2.createRadialGradient(ix,iy,0,ix,iy,w*0.035);
+        ig.addColorStop(0,'rgba(150,255,100,0.95)'); ig.addColorStop(1,'rgba(0,0,0,0)');
+        c2.fillStyle=ig; c2.beginPath(); c2.arc(ix,iy,w*0.035,0,Math.PI*2); c2.fill();
+      });
+      // Deer movement detected
+      const dm=Math.sin(t*0.0003)*w*0.015;
+      c2.fillStyle='rgba(100,255,50,0.3)';
+      c2.beginPath(); c2.ellipse(w*0.6+dm,h*0.73,w*0.05,h*0.055,0,0,Math.PI*2); c2.fill();
+      return off;
+    }
+  },
+  {
+    name:'Pájaro Carpintero', emoji:'🦜', visionType:'Tetracromacia + UV territorial',
+    color:'#ff4444', tagColor:'rgba(255,68,68,0.15)', tagBorder:'rgba(255,68,68,0.4)',
+    tags:['4 conos + UV','Manchas UV territoriales','Alta frecuencia flicker'],
+    desc:'Los pájaros carpinteros ven en UV. Sus plumas tienen patrones UV que nosotros no podemos ver y que delimitan territorios y atraen pareja. El bosque que ven es completamente diferente — lleno de marcas y señales fluorescentes invisibles.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        d[i]=Math.min(255,r*1.15);
+        d[i+1]=Math.min(255,g*1.05);
+        d[i+2]=Math.min(255,b*1.2+r*0.15);
+      }
+      c2.putImageData(id,0,0);
+      // UV territorial marks on trees
+      trees.forEach(tr=>{
+        if(tr.layer===1){
+          const ug=c2.createRadialGradient(tr.x*w,h*0.5-tr.h*h,0,tr.x*w,h*0.5-tr.h*h,w*0.04);
+          ug.addColorStop(0,'rgba(200,50,255,0.7)'); ug.addColorStop(1,'rgba(0,0,0,0)');
+          c2.fillStyle=ug; c2.beginPath(); c2.arc(tr.x*w,h*0.6-tr.h*h,w*0.03,0,Math.PI*2); c2.fill();
+        }
+      });
+      // UV sky — more vivid blue
+      c2.fillStyle='rgba(100,50,200,0.1)'; c2.fillRect(0,0,w,h*0.62);
+      // Insects UV bright
+      insects.forEach((ins,i)=>{
+        const ix=((ins.x+t*ins.sp)%1.1-0.05)*w, iy=ins.y*h;
+        c2.fillStyle='rgba(255,100,255,0.7)';
+        c2.beginPath(); c2.arc(ix,iy,w*0.01,0,Math.PI*2); c2.fill();
+      });
+      return off;
+    }
+  },
+  {
+    name:'Medusa', emoji:'🪼', visionType:'Fotorreceptores simples (luz/sombra)',
+    color:'#88ccff', tagColor:'rgba(136,204,255,0.15)', tagBorder:'rgba(136,204,255,0.4)',
+    tags:['Solo luz/sombra','Sin cerebro','360° básico'],
+    desc:'Las medusas tienen los ojos más simples del reino animal — solo distinguen luz de oscuridad. No tienen cerebro, pero sus 24 ojos distribuidos forman un sistema distribuido que les permite orientarse verticalmente usando la luz solar como guía.',
+    render(imgData,w,h,t){
+      const off=drawRawScene(w,h,t);
+      const c2=off.getContext('2d');
+      const id=c2.getImageData(0,0,w,h); const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        // Only light/dark
+        const lum=(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11)/255;
+        const val=lum>0.45?220:lum>0.25?100:20;
+        d[i]=Math.round(val*0.6+20); d[i+1]=Math.round(val*0.7+30); d[i+2]=Math.min(255,Math.round(val+80));
+      }
+      c2.putImageData(id,0,0);
+      // Very blurry/simple
+      c2.filter='blur(4px)';
+      const tmp=document.createElement('canvas'); tmp.width=w; tmp.height=h;
+      tmp.getContext('2d').drawImage(off,0,0);
+      c2.filter='none';
+      c2.drawImage(tmp,0,0);
+      c2.fillStyle='rgba(0,30,80,0.4)'; c2.fillRect(0,0,w,h);
+      // Pulsing light detection rings
+      for(let ri=0;ri<3;ri++){
+        const rphase=((t*0.0005+ri/3)%1);
+        c2.strokeStyle=`rgba(100,200,255,${(1-rphase)*0.2})`;
+        c2.lineWidth=2;
+        c2.beginPath(); c2.arc(w/2,h/2,rphase*w*0.6,0,Math.PI*2); c2.stroke();
+      }
+      return off;
+    }
+  },
+];
+
+// ══════════════════════════════════════════════════════
+// RENDER VISION
+// ══════════════════════════════════════════════════════
+let currentIdx = 0;
+
+function renderVision(){
+  if(!W||!H) return;
+  const animal = ANIMALS[currentIdx];
+  try {
+    const result = animal.render(null, W, H, animT);
+    ctx.clearRect(0,0,W,H);
+    ctx.drawImage(result, 0, 0, W, H);
+  } catch(e) {
+    // Fallback: just draw raw scene
+    const raw = drawRawScene(W, H, animT);
+    ctx.clearRect(0,0,W,H);
+    ctx.drawImage(raw, 0, 0, W, H);
+  }
+  // Update UI
+  document.getElementById('animal-name').textContent = animal.name;
+  document.getElementById('animal-vision-type').textContent = animal.visionType;
+  document.getElementById('vision-label').textContent = animal.visionType;
+  document.getElementById('info-title').innerHTML = `${animal.emoji} ${animal.name}`;
+  document.getElementById('info-desc').textContent = animal.desc;
+  document.getElementById('info-tags').innerHTML = animal.tags.map(tag=>
+    `<span class="itag" style="background:${animal.tagColor};border-color:${animal.tagBorder};color:${animal.color}">${tag}</span>`
+  ).join('');
+  // Selector
+  document.querySelectorAll('.asel').forEach((el,i)=>el.classList.toggle('active',i===currentIdx));
+  // Scroll selector into view
+  const selEl = document.getElementById('selector').children[currentIdx];
+  if(selEl) selEl.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+}
+
+function setAnimal(idx){
+  currentIdx = ((idx % ANIMALS.length) + ANIMALS.length) % ANIMALS.length;
+  renderVision();
+}
+
+// ══════════════════════════════════════════════════════
+// BUILD SELECTOR
+// ══════════════════════════════════════════════════════
+function buildSelector(){
+  const sel = document.getElementById('selector');
+  ANIMALS.forEach((a,i)=>{
+    const btn = document.createElement('div');
+    btn.className = 'asel' + (i===0?' active':'');
+    btn.textContent = a.emoji;
+    btn.title = a.name;
+    btn.addEventListener('click', ()=>setAnimal(i));
+    sel.appendChild(btn);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// CONTROLS
+// ══════════════════════════════════════════════════════
+document.getElementById('btn-prev').addEventListener('click',()=>setAnimal(currentIdx-1));
+document.getElementById('btn-next').addEventListener('click',()=>setAnimal(currentIdx+1));
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft') setAnimal(currentIdx-1);
+  if(e.key==='ArrowRight') setAnimal(currentIdx+1);
+});
+
+// Swipe support
+let touchStartX=0;
+canvas.addEventListener('touchstart',e=>{ touchStartX=e.touches[0].clientX; },{passive:true});
+canvas.addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-touchStartX;
+  if(Math.abs(dx)>40){ setAnimal(currentIdx+(dx<0?1:-1)); }
+},{passive:true});
+
+// ══════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ══════════════════════════════════════════════════════
+let lastT2=0;
+function loop(ts){
+  animT = ts;
+  // Only re-render at ~30fps to save perf
+  if(ts-lastT2 > 33){
+    lastT2=ts;
+    renderVision();
+  }
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('load',()=>{
+  setTimeout(()=>{
+    resize();
+    buildSelector();
+    requestAnimationFrame(loop);
+  },100);
+});
+</script>
+</body>
+</html>
